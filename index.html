@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q1</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      text-align: center;
+      color: #4e79a7;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 8px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    #chart {
+      display: flex;
+      justify-content: center;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h2></h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+  <div id="navigation">
+ </div>
+  <script>
+    const margin = {top: 50, right: 100, bottom: 50, left: 200},
+          width = 900 - margin.left - margin.right,
+          height = 400 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right + 600)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("data_ggsheet - data.csv").then(
+      rawData => {
+              rawData.forEach(d => {
+                d["Thành tiền"] = +d["Thành tiền"];
+                d["SL"] = +d["SL"];
+              });
+
+      const nestedData = d3.rollup(
+        rawData,
+        v => ({
+          doanhThu: d3.sum(v, d => d["Thành tiền"]),
+          soLuong: d3.sum(v, d => d["SL"]),
+          MaMatHang: v[0]["Mã mặt hàng"],
+          MaNhomHang: v[0]["Mã nhóm hàng"],
+          NhomHang: v[0]["Tên nhóm hàng"]
+        }),
+        d => d["Tên mặt hàng"]
+      );
+
+      const data = Array.from(nestedData, ([MatHang, values]) => ({
+        MatHang: `[${values.MaMatHang}] ${MatHang}`,
+        TenNhomHang: `[${values.MaNhomHang}] ${values.NhomHang}`,
+        ...values
+      }));
+
+      data.sort((a, b) => b.doanhThu - a.doanhThu);
+
+      let uniqueGroups = [...new Set(data.map(d => d.TenNhomHang))];
+
+      const color = d3.scaleOrdinal()
+                      .domain(data.map(d => d.TenNhomHang))
+                      .range(d3.schemeTableau10);
+
+      const y = d3.scaleBand()
+                  .domain(data.map(d => d.MatHang))
+                  .range([0, height])
+                  .padding(0.2);
+
+      const x = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhThu)])
+                  .nice()
+                  .range([0, width]);
+
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", - 10)  
+        .attr("text-anchor", "middle")  
+        .style("font-size", "20px")  
+        .style("fill", "#4e79a7") 
+        .style("font-weight", "bold") 
+        .text("Doanh thu bán hàng theo Mặt hàng");
+
+      svg.append("g")
+         .call(d3.axisLeft(y));
+
+      svg.append("g")
+         .attr("transform", `translate(0, ${height})`)
+         .call(d3.axisBottom(x)
+                 .ticks(15)
+                 .tickFormat(d3.format(".1s"))
+                 .tickSizeOuter(0));
+
+      svg.append("g")
+         .attr("class", "grid")
+         .attr("transform", `translate(0, ${height})`)
+         .call(d3.axisBottom(x)
+                 .tickSize(-height)
+                 .tickFormat("")
+                 )
+                 .selectAll("line")
+                 .style("stroke", "#ddd"); 
+                 
+      svg.selectAll(".domain").remove();
+
+      svg.selectAll(".bar")
+         .data(data)
+         .enter()
+         .append("rect")
+         .attr("class", "bar")
+         .attr("y", d => y(d.MatHang))
+         .attr("x", 0)
+         .attr("height", y.bandwidth())
+         .attr("width", d => x(d.doanhThu))
+         .attr("fill", d => color(d.TenNhomHang))
+         .on("mouseover", (event, d) => {
+            tooltip.style("opacity", 1)
+                   .html(`Mặt hàng: <strong>${d.MatHang}</strong><br>
+                          Nhóm hàng: ${d.TenNhomHang}<br>
+                          Doanh số bán: ${d3.format(",.0f")(d.doanhThu/1_000_000)} triệu VND<br>
+                          Số lượng bán: ${d3.format(",.0f")(d.soLuong)} SKUs`)
+                   .style("left", (event.pageX + 10) + "px")
+                   .style("top", (event.pageY - 28) + "px");
+         })
+         .on("mousemove", (event) => {
+            tooltip.style("left", (event.pageX + 10) + "px")
+                   .style("top", (event.pageY - 28) + "px");
+         })
+         .on("mouseout", () => {
+            tooltip.style("opacity", 0);
+         });
+
+      const formatMillion = d3.format(",.0f");
+      svg.selectAll(".label")
+         .data(data)
+         .enter()
+         .append("text")
+         .attr("x", d => x(d.doanhThu) + 5)
+         .attr("y", d => y(d.MatHang) + y.bandwidth() / 2)
+         .attr("dy", "0.35em")
+         .attr("text-anchor", "start")
+         .style('font-size','12px')
+         .text(d => `${formatMillion(d.doanhThu/1_000_000)} triệu VND`);
+      
+      let legend = svg.append("g")
+                      .attr("transform", `translate(${width + 70}, ${margin.top - 50})`);
+      
+      uniqueGroups.forEach((group, i) => {
+      let legendRow = legend.append("g")
+                            .attr("transform", `translate(0, ${i * 20})`);
+
+          legendRow.append("rect")
+                    .attr("width", 12)
+                    .attr("height", 12)
+                    .attr("fill", color(group));
+
+          legendRow.append("text")
+                    .attr("x", 18)
+                    .attr("y", 10)
+                    .style("font-size", "12px")
+                    .style("fill", "#333")
+                    .text(group);
+                    });
+      
+      const explanationGroup = svg.append("g")
+                                  .attr("transform", "translate(810,0)");
+              
+      explanationGroup.append("rect")
+                      .attr("width", 450)
+                      .attr("height", 230)
+                      .attr("fill", "white")
+                      .attr("opacity", 0.7)
+                      .attr("stroke", "#ccc")
+                      .attr("stroke-width", 1)
+                      .attr("rx", 10); 
+
+      explanationGroup.append("foreignObject")
+                      .attr("x", 10)
+                      .attr("y", 10)
+                      .attr("width", 430)
+                      .attr("height", 210)
+                      .append("xhtml:div")
+                      .style("font-size", "13px")
+                      .style("color", "#333")
+                      .style("text-align", "justify")
+                      .style("line-height", "1.3")
+                      .html(`
+                          <p>- <strong>[BOT01] Bột cần tây</strong> đạt doanh số cao nhất với <strong>626 triệu VND</strong>, chiếm vị trí dẫn đầu. Chứng tỏ sản phẩm bột cần tây có sức hút lớn trên thị trường.</p>
+                          <p>- <strong>[SET06] Set 10 gói trà gạo lứt 8 vị</strong> chỉ đạt <strong>31,85 triệu VND</strong>, thấp nhất trong danh sách. Điều này phản ánh sản phẩm ít được ưa chuộng hoặc chưa được tiếp thị hiệu quả.</p>
+                          <p>- Nhóm hàng <strong>[THO] Trà hoa</strong> chiếm ưu thế với 4 mặt hàng nằm trong top 10 mặt hàng có doanh số cao nhất. Điều này cho thấy mặt hàng của nhóm hàng [THO] Trà hoa đang được ưa chuộng.</p>
+                          <p>- Nhóm hàng <strong>[SET] Set trà</strong> có nhiều mặt hàng nhất (7 mặt hàng) nhưng lại có doanh số của từng mặt hàng thấp hơn hẳn so với mặt hàng của nhóm hàng khác. Điều này cho thấy nhóm hàng này chưa thực sự mang lại hiệu quả về lợi nhuận cho doanh nghiệp.</p>
+                      `);
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="navigation.js"></script>
+</body>
+</html>

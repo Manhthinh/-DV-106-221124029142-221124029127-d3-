@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Q11</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="style_shared.css"> 
+    <div id="global-navigation">
+    </div>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chart {
+            display: flex;
+            justify-content: center;
+        }
+        h2 {
+            text-align: center;
+            color: #4e79a7;
+        }
+        .tooltip {
+          position: absolute;
+          background-color: white;
+          border: 1px solid #ccc;
+          padding: 7px;
+          border-radius: 5px;
+          box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+          font-size: 13px;
+        }
+        *{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+    </style>
+</head>
+<body>
+    <div id="chart"></div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const margin = { top: 50, right: 5, bottom: 50, left: 50 },
+              width = 900 - margin.left - margin.right,
+              height = 600 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart")
+                      .append("svg")
+                      .attr("width", width + margin.left + margin.right + 400)
+                      .attr("height", height + margin.top + margin.bottom)
+                      .append("g")
+                      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip");
+
+        d3.csv("data_ggsheet - data.csv").then(rawData => {
+            const purchasesByCustomer = d3.rollups(
+                rawData,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d["Mã khách hàng"]
+            );
+
+            const distribution = d3.rollups(
+                purchasesByCustomer,
+                v => v.length,
+                d => d[1] 
+            );
+
+            const data = distribution.map(([purchaseCount, customerCount]) => ({
+                purchaseCount: +purchaseCount,
+                customerCount: +customerCount
+            })).sort((a, b) => a.purchaseCount - b.purchaseCount);
+
+            console.log("Phân phối lượt mua hàng:", data);
+          
+            const x = d3.scaleBand()
+                .domain(data.map(d => d.purchaseCount))
+                .range([0, width])
+                .padding(0.1);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.customerCount)])
+                .nice()
+                .range([height, 0]);
+            
+            svg.append("text")
+            .attr("x", width / 2)  
+            .attr("y", -10)  
+            .attr("text-anchor", "middle")  
+            .style("font-size", "20px")  
+            .style("fill", "#4e79a7")  
+            .style("font-weight", "bold")  
+            .text("Phân phối lượt mua hàng");
+
+            svg.append("g")
+            .attr("class", "grid")
+            .call(d3.axisLeft(y)
+                    .tickSize(-width) 
+                    .tickFormat(""))   
+            .selectAll("line")
+            .attr("stroke", "#ccc")    
+            .attr("stroke-opacity", 0.8); 
+
+            svg.selectAll(".domain").remove();
+     
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(d3.axisBottom(x).tickFormat(d3.format("d")))
+                .selectAll("text")
+                .style("font-size", "12px");
+          
+            svg.append("g")
+                .call(d3.axisLeft(y))
+                .append("text")
+                .attr("transform", "rotate(-90)")
+                .attr("x", -height / 2)
+                .attr("y", -margin.left + 10)
+                .attr("fill", "black")
+                .attr("text-anchor", "middle")
+                .text("Số Khách Hàng");
+          
+            svg.selectAll(".bar")
+                .data(data)
+                .join("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.purchaseCount))
+                .attr("y", d => y(d.customerCount))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.customerCount))
+                .attr("fill", "#4e79a7")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 1);
+                    tooltip.html(`
+                        <strong>Đã mua ${d.purchaseCount} lần</strong><br/>
+                        Số lượng KH: ${d3.format(",")(d.customerCount)}
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            const explanationGroup = svg.append("g")
+                                        .attr("transform", "translate(850,0)");
+                    
+            explanationGroup.append("rect")
+                            .attr("width", 400)
+                            .attr("height", 400)
+                            .attr("fill", "white")
+                            .attr("opacity", 0.7)
+                            .attr("stroke", "#ccc")
+                            .attr("stroke-width", 1)
+                            .attr("rx", 10); 
+
+            explanationGroup.append("foreignObject")
+                            .attr("x", 10)
+                            .attr("y", 10)
+                            .attr("width", 380)
+                            .attr("height", 380)
+                            .append("xhtml:div")
+                            .style("font-size", "13px")
+                            .style("color", "#333")
+                            .style("text-align", "justify")
+                            .style("line-height", "1.3")
+                            .html(`
+                                <p>- <strong>Số lượt mua 1 lần </strong> có số lượng khách hàng cao nhất với <strong>4.863 khách hàng</strong>. Điều này cho thấy hơn một nửa khách hàng chỉ mua hàng 1 lần, có thể là khách hàng mới hoặc khách hàng thử sản phẩm.</p>
+                                <p>- <strong>Số lượt mua 22 lần</strong> có số lượng khách hàng thấp nhất với <strong>chỉ 1 khách hàng</strong>. Điều này cho thấy rất ít khách hàng mua sắm với tần suất cao như vậy.</p>
+                                <p>- <strong>Phân bố lệch phải:</strong> phần lớn khách hàng tập trung ở số lượt mua <strong>thấp (từ 1 đến 5 lần)</strong> và giảm mạnh khi số lượt mua tăng.</p>
+                                <p>➜ Từ biểu đồ dễ nhận thấy khách hàng thường chỉ mua 1 lần rồi không quay lại, chứng tỏ doanh nghiệp chưa thực hiện tốt trong khâu chăm sóc khách hàng hoặc sản phẩm chưa đủ thuyết phúc khiến khách hàng quay trở lại mua thêm những lần tiếp theo.</p>
+                                <p>- Tệp khách hàng có số lần mua lặp lại nhiều lần của doanh nghiệp gần như rất thấp chứng tỏ lượng khách hàng trung thành của doanh nghiệp là không nhiều.</p>
+                                <p>- Doanh nghiệp cần chú ý nhiều hơn về việc nâng cao trải nghiệm khách hàng để giữ chân khách hàng và xây dựng chương trình membership phù hợp với nhóm khách hàng trung thành nhằm duy trì mối quan hệ bền vững với họ.</p>
+                            `);
+        }).catch(error => {
+            console.error("Lỗi load dữ liệu:", error);
+        });
+    </script>
+    <script src="navigation.js"></script>
+</body>
+</html>

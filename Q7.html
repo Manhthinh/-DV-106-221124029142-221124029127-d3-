@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q7</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      text-align: center;
+      color: #4e79a7;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+    <h2></h2>
+    <div id="chart"></div>
+    <div class="tooltip"></div>
+
+  <script>
+    const margin = {top: 50, right: 70, bottom: 20, left: 150},
+          width = 1000 - margin.left - margin.right,
+          height = 600 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right+450)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select(".tooltip");
+
+    d3.csv("data_ggsheet - data.csv").then(rawData => {
+      const totalOrders = new Set(rawData.map(d => d["Mã đơn hàng"])).size;
+      const nestedData = d3.rollup(
+        rawData,
+        v => ({ count: new Set(v.map(d => d["Mã đơn hàng"])).size, total: v.length }),
+        d => d["Mã nhóm hàng"],
+        d => d["Tên nhóm hàng"]
+      );
+
+    let data = [];
+    nestedData.forEach((tenNhom, maNhom) => {
+      tenNhom.forEach((stats, tenNhomHang) => {
+        data.push({
+          MaNhomHang: maNhom,
+          Tennhomhang: tenNhomHang,
+          probability: stats.count / totalOrders,
+          totalOrders: stats.total
+        });
+      });
+    });
+
+    data.sort((a, b) => b.probability - a.probability);
+    data.forEach(d => d.label = `[${d.MaNhomHang}] ${d.Tennhomhang}`);
+
+    const color = d3.scaleOrdinal()
+                    .domain(data.map(d => d.Tennhomhang))
+                    .range(d3.schemeTableau10);
+
+    const y = d3.scaleBand()
+                .domain(data.map(d => d.label))
+                .range([0, height])
+                .padding(0.2);
+
+    const x = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.probability)])
+                .nice()
+                .range([0, width]);
+
+    svg.append("text")
+       .attr("x", width / 2)  
+       .attr("y",-20)  
+       .attr("text-anchor", "middle")  
+       .style("font-size", "20px")  
+       .style("fill", "#4e79a7")  
+       .style("font-weight", "bold")  
+       .text("Xác suất Bán hàng theo Nhóm hàng");
+      
+    svg.append("g")
+        .attr("class", "grid")
+        .attr("transform", `translate(0, ${height})`)
+        .call(d3.axisBottom(x)
+                .tickSize(-height)
+                .tickFormat("")
+                )
+                .selectAll("line")
+                .style("stroke", "#ddd"); 
+
+    svg.selectAll(".domain").remove();
+
+    svg.append("g").call(d3.axisLeft(y));
+    svg.append("g")
+        .attr("transform", `translate(0, ${height})`)
+        .call(d3.axisBottom(x).ticks(5).tickFormat(d3.format(".0%")));
+
+    svg.selectAll(".bar")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("y", d => y(d.label))
+        .attr("x", 0)
+        .attr("height", y.bandwidth())
+        .attr("width", d => x(d.probability))
+        .attr("fill", d => color(d.Tennhomhang))
+        .on("mouseover", function(event, d) {
+          tooltip.style("opacity", 1)
+                  .style("display", "block")
+                  .html(`<strong>Nhóm hàng:</strong> ${d.label}<br>
+                        <strong>Xác suất bán:</strong> ${d3.format(".1%")(d.probability)}<br>
+                        <strong>SL đơn bán:</strong> ${d3.format(",.0f")(d.totalOrders)} SKUs`);
+          d3.select(this).style("opacity", 0.7);
+        })
+        .on("mousemove", function(event) {
+          tooltip.style("left", (event.pageX + 10) + "px")
+                  .style("top", (event.pageY - 20) + "px");
+        })
+        .on("mouseout", function() {
+          tooltip.style("display", "none");
+          d3.select(this).style("opacity", 1);
+        });
+
+    svg.selectAll(".label")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("x", d => x(d.probability) + 5)
+        .attr("y", d => y(d.label) + y.bandwidth() / 2)
+        .attr("dy", "0.35em")
+        .attr("text-anchor", "start")
+        .style('font-size','13px')
+        .text(d => d3.format(".1%")(d.probability));
+
+    const explanationGroup = svg.append("g")
+                                  .attr("transform", "translate(850,0)");
+              
+    explanationGroup.append("rect")
+                    .attr("width", 450)
+                    .attr("height", 180)
+                    .attr("fill", "white")
+                    .attr("opacity", 0.7)
+                    .attr("stroke", "#ccc")
+                    .attr("stroke-width", 1)
+                    .attr("rx", 10); 
+
+    explanationGroup.append("foreignObject")
+                    .attr("x", 10)
+                    .attr("y", 10)
+                    .attr("width", 430)
+                    .attr("height", 150)
+                    .append("xhtml:div")
+                    .style("font-size", "13px")
+                    .style("color", "#333")
+                    .style("text-align", "justify")
+                    .style("line-height", "1.3")
+                    .html(`
+                          <p>- <strong>[TMX] Trà mix</strong> dẫn đầu với xác suất bán <strong>54,5%</strong>. Điều này cho thấy các sản phẩm trà mix có khả năng được khách hàng lựa chọn cho vào giỏ hàng cao nhất trong số các nhóm hàng.</p>
+                          <p>- <strong>[SET] Set trà</strong> có xác suất bán thấp nhất với <strong>23.9%</strong>. Điều này cho thấy các set trà ít được khách hàng ưa chuộng.</p>
+                          <p>- Ngoài ra thì nhóm hàng <strong>[THO] Trà hoa và [TTC] Trà củ, quả sấy</strong> cũng đạt xác suất bán hàng khá cao lần lượt là <strong>54,4% và 53,3%</strong> chứng tỏ chúng là những nhóm hàng thường xuyên được khách hàng mua nhất</p>
+                      `);
+
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="navigation.js"></script>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q3</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="style_shared.css"> 
+  <div id="global-navigation">  
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      text-align: center;
+      color: #4e79a7;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h2></h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const margin = {top: 50, right: 5, bottom: 50, left: 50},
+          width = 1000 - margin.left - margin.right,
+          height = 600 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right + 400)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("data_ggsheet - data.csv").then(rawData => {
+      rawData.forEach(d => {
+        d["Thành tiền"] = +d["Thành tiền"];
+        d["SL"] = +d["SL"];
+        d.Tháng = `Tháng ${d["Thời gian tạo đơn"].split("-")[1]}`;
+      });
+
+    const nestedData = d3.rollup(
+        rawData,
+        v => ({
+          doanhThu: d3.sum(v, d => d["Thành tiền"]),
+          soLuong: d3.sum(v, d => d["SL"])
+        }),
+        d => d.Tháng
+      );
+
+    const data = Array.from(
+      nestedData, 
+      ([Tháng, {doanhThu, soLuong}]) => ({ 
+                                    Tháng, 
+                                    doanhThu, 
+                                    soLuong 
+                                  }));
+    data.sort((a, b) => a.Tháng.localeCompare(b.Tháng, 'vi', { numeric: true }));
+
+    const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+    const x = d3.scaleBand()
+                  .domain(data.map(d => d.Tháng))
+                  .range([0, width])
+                  .padding(0.2);
+
+    const y = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhThu)])
+                  .nice()
+                  .range([height, 0]);
+
+    svg.append("text")
+       .attr("x", width / 2)  
+       .attr("y", -10)  
+       .attr("text-anchor", "middle")  
+       .style("font-size", "20px")  
+       .style("fill", "#4e79a7")  
+       .style("font-weight", "bold")  
+       .text("Doanh số bán hàng theo Tháng");
+
+    svg.append("g")
+       .attr("class", "grid")
+       .call(d3.axisLeft(y)
+               .tickSize(-width) 
+               .tickFormat(""))   
+       .selectAll("line")
+       .attr("stroke", "#ccc")    
+       .attr("stroke-opacity", 0.8); 
+
+    svg.selectAll(".domain").remove();
+
+    svg.append("g")
+       .attr("transform", `translate(0, ${height})`)
+       .call(d3.axisBottom(x))
+       .append("text")
+       .attr("x", width / 2)
+       .attr("y", 40)
+       .attr("fill", "black")
+       .attr("text-anchor", "middle");
+
+    svg.append("g")
+       .call(d3.axisLeft(y)
+               .ticks(9)
+               .tickFormat(d3.format(".1s"))
+               .tickSizeOuter(0));
+
+    svg.selectAll(".bar")
+       .data(data)
+       .enter()
+       .append("rect")
+       .attr("class", "bar")
+       .attr("x", d => x(d.Tháng))
+       .attr("y", d => y(d.doanhThu))
+       .attr("width", x.bandwidth())
+       .attr("height", d => height - y(d.doanhThu))
+       .attr("fill", d => color(d.Tháng))
+       .on("mouseover", (event, d) => {
+        tooltip.style("opacity", 1)
+               .style("display", "block")
+               .html(`<strong>${d.Tháng}</strong><br>
+                     Doanh số bán: ${d3.format(",.0f")(d.doanhThu / 1_000_000)} triệu VND <br>
+                     Số lượng bán: ${d3.format(",.0f")(d.soLuong)} SKUs`)
+               .style("left", `${event.pageX + 10}px`)
+               .style("top", `${event.pageY - 20}px`);
+       })
+       .on("mousemove", event => {
+         tooltip.style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY - 20}px`);
+         })
+       .on("mouseout", () => {
+           tooltip.style("display", "none");
+         });
+
+    svg.selectAll(".label")
+       .data(data)
+       .enter()
+       .append("text")
+       .attr("x", d => x(d.Tháng) + x.bandwidth() / 2)
+       .attr("y", d => y(d.doanhThu) - 5)
+       .attr("text-anchor", "middle")
+       .style('font-size','12px')
+       .text(d => `${d3.format(",.0f")(d.doanhThu / 1_000_000)} triệu VND`);
+
+    const explanationGroup = svg.append("g")
+                                  .attr("transform", "translate(950,0)");
+              
+    explanationGroup.append("rect")
+                    .attr("width", 400)
+                    .attr("height", 400)
+                    .attr("fill", "white")
+                    .attr("opacity", 0.7)
+                    .attr("stroke", "#ccc")
+                    .attr("stroke-width", 1)
+                    .attr("rx", 10); 
+
+    explanationGroup.append("foreignObject")
+                    .attr("x", 10)
+                    .attr("y", 10)
+                    .attr("width", 380)
+                    .attr("height", 380)
+                    .append("xhtml:div")
+                    .style("font-size", "13px")
+                    .style("color", "#333")
+                    .style("text-align", "justify")
+                    .style("line-height", "1.3")
+                    .html(`
+                          <p>- <strong>Tháng 12</strong> đạt doanh số cao nhất với <strong>750 triệu VND</strong>. Đây là tháng cuối năm, thường có nhu cầu mua sắm tăng cao do các dịp lễ hội như Giáng sinh và Tết Dương lịch, có thể là lý do chính dẫn đến doanh số cao nhất trong năm.</p>
+                          <p>- <strong>Tháng 4</strong> ghi nhận doanh số thấp nhất với <strong>196 triệu VND</strong>. Đây là thời điểm giữa năm, không có các dịp lễ lớn và thời điểm sau tết có thể nhu cầu mua sắm không nhiều dẫn đến doanh số bán thấp nhất trong năm.</p>
+                          <p>- Xu hướng doanh số:</p>
+                          <p>&nbsp;&nbsp;&nbsp;+ <strong>Từ tháng 01 đến tháng 04</strong>: doanh số có xu hướng <strong>giảm dần</strong>, nguyên nhân có thể sau dịp tết nguyên đán nên nhu cầu mua sắm giảm dần.</p>
+                          <p>&nbsp;&nbsp;&nbsp;+ <strong>Từ tháng 04 đến tháng 07</strong>: doanh số có xu hướng <strong>tăng dần</strong> trở lại.</p>
+                          <p>&nbsp;&nbsp;&nbsp;+ <strong>Từ tháng 08 đến tháng 12</strong>: doanh số tăng mạnh và luôn duy trì ở mức cao đến hết năm, cho thấy sức mua hàng tăng cao vào thời điểm cuối năm.</p>
+                          <p>- Nhìn vào xu hướng doanh số theo các tháng trong năm có thể thấy doanh số bắt đầu <strong>giảm từ thời điểm tháng 01 đến tháng 04</strong>, sau đó bắt đầu <strong>tăng dần đến tháng 07</strong> và giai đoạn <strong>từ tháng 08 đến hết năm thì doanh số bán luôn giữ ở mức khá cao</strong> so với thời điểm đầu năm.
+                      `);
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="navigation.js"></script>
+</body>
+</html>
