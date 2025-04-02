@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q4</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      text-align: center;
+      color: #4e79a7;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h2></h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const margin = {top: 50, right: 50, bottom: 50, left: 50},
+          width = 1100 - margin.left - margin.right,
+          height = 600 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right + 500)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("data_ggsheet - data.csv").then(rawData => {
+      rawData.forEach(d => {
+        d["Thành tiền"] = +d["Thành tiền"];
+        d["Số lượng"] = +d["Số lượng"]; 
+        d.Ngày = new Date(d["Thời gian tạo đơn"]).getDay(); 
+      });
+
+ 
+    const weekdays = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"];
+    const weekdayOrder = {1: "Thứ Hai", 2: "Thứ Ba", 3: "Thứ Tư", 4: "Thứ Năm", 5: "Thứ Sáu", 6: "Thứ Bảy", 0: "Chủ Nhật"};
+
+    const groupedData = d3.group(rawData, d => d.Ngày);
+
+    const data = Array.from(
+      groupedData, 
+      ([ngay, orders]) => {
+                    const doanhThuTong = d3.sum(orders, d => d["Thành tiền"]);
+                    const soLuongTong = d3.sum(orders, d => d["SL"]); 
+                    const soNgayCoDon = new Set(orders.map(d => d["Thời gian tạo đơn"].split(" ")[0])).size; 
+                    const doanhThuTB = soNgayCoDon > 0 ? doanhThuTong / soNgayCoDon : 0;
+                    const soLuongTB = soNgayCoDon > 0 ? soLuongTong / soNgayCoDon : 0;
+                    
+                    return { 
+                      Ngày: weekdayOrder[ngay], 
+                      doanhThuTB, 
+                      soLuongTB };
+                      });
+
+    data.sort((a, b) => weekdays.indexOf(a.Ngày) - weekdays.indexOf(b.Ngày));
+
+    const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+    const x = d3.scaleBand()
+                  .domain(data.map(d => d.Ngày))
+                  .range([0, width])
+                  .padding(0.2);
+
+    const y = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhThuTB)])
+                  .nice()
+                  .range([height, 0]);
+
+    svg.append("text")
+       .attr("x", width / 2)  
+       .attr("y", -10)  
+       .attr("text-anchor", "middle")  
+       .style("font-size", "20px")  
+       .style("fill", "#4e79a7")  
+       .style("font-weight", "bold")  
+       .text("Doanh số bán hàng theo Ngày trong tuần");
+    
+    svg.append("g")
+       .attr("class", "grid")
+       .call(d3.axisLeft(y)
+               .tickSize(-width) 
+               .tickFormat(""))   
+       .selectAll("line")
+       .attr("stroke", "#ccc")    
+       .attr("stroke-opacity", 0.8); 
+
+    svg.selectAll(".domain").remove();
+
+    svg.append("g")
+       .attr("transform", `translate(0, ${height})`)
+       .call(d3.axisBottom(x))
+       .append("text")
+       .attr("x", width / 2)
+       .attr("y", 40)
+       .attr("fill", "black");
+
+    svg.append("g")
+       .call(d3.axisLeft(y)
+               .ticks(10)
+               .tickFormat(d3.format(".1s"))
+               .tickSizeOuter(0));
+
+    svg.selectAll(".bar")
+       .data(data)
+       .enter()
+       .append("rect")
+       .attr("class", "bar")
+       .attr("x", d => x(d.Ngày))
+       .attr("y", d => y(d.doanhThuTB))
+       .attr("width", x.bandwidth())
+       .attr("height", d => height - y(d.doanhThuTB))
+       .attr("fill", d => color(d.Ngày))
+       .on("mouseover", (event, d) => {
+        tooltip.style("opacity", 1)
+               .style("display", "block")
+               .html(`<strong>${d.Ngày}</strong><br>
+                        Doanh thu TB: ${d3.format(",.0f")(d.doanhThuTB )} VND<br>
+                        Số lượng TB: ${d3.format(",.0f")(d.soLuongTB)} SKUs`)
+               .style("left", `${event.pageX + 10}px`)
+               .style("top", `${event.pageY - 20}px`);
+        })
+       .on("mousemove", event => {
+        tooltip.style("left", `${event.pageX + 10}px`)
+               .style("top", `${event.pageY - 20}px`);
+        })
+       .on("mouseout", () => {
+        tooltip.style("display", "none");
+        });
+
+    svg.selectAll(".label")
+       .data(data)
+       .enter()
+       .append("text")
+       .attr("x", d => x(d.Ngày) + x.bandwidth() / 2)
+       .attr("y", d => y(d.doanhThuTB) - 5)
+       .attr("text-anchor", "middle")
+       .style('font-size','12px')
+       .text(d => `${d3.format(",.0f")(d.doanhThuTB )} VND`);
+
+    const explanationGroup = svg.append("g")
+                                  .attr("transform", "translate(1000,0)");
+              
+    explanationGroup.append("rect")
+                    .attr("width", 400)
+                    .attr("height", 230)
+                    .attr("fill", "white")
+                    .attr("opacity", 0.7)
+                    .attr("stroke", "#ccc")
+                    .attr("stroke-width", 1)
+                    .attr("rx", 10); 
+
+    explanationGroup.append("foreignObject")
+                    .attr("x", 10)
+                    .attr("y", 10)
+                    .attr("width", 380)
+                    .attr("height", 200)
+                    .append("xhtml:div")
+                    .style("font-size", "13px")
+                    .style("color", "#333")
+                    .style("text-align", "justify")
+                    .style("line-height", "1.3")
+                    .html(`
+                          <p>- <strong>Thứ Bảy</strong> đạt doanh số trung bình cao nhất với <strong>14,493,547 VND</strong>. Đây là ngày cuối tuần, khi người tiêu dùng thường có nhiều thời gian rảnh rỗi để mua sắm, có thể là lý do chính dẫn đến doanh số tăng.</p>
+                          <p>- <strong>Thứ Ba</strong> ghi nhận doanh số thấp nhất với <strong>11,896,250 VND</strong>. Đây là ngày giữa tuần, khi người tiêu dùng thường bận rộn với công việc, có thể ảnh hưởng đến sức mua.</p>
+                          <p>- Xu hướng doanh số:</p>
+                          <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Doanh số trung bình khá thấp vào thời điểm đầu tuần, tăng dần ở giữa tuần và đạt đỉnh điểm vào cuối tuần (thứ bảy). <strong>Có thể thấy đầu tuần là thời điểm người tiêu dùng ít mua sắm hơn và cuối tuần là thời điểm mua sắm sôi động nhất.</strong></p>
+                      `);
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="navigation.js"></script>
+</body>
+</html>

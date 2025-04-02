@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Q12</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="style_shared.css"> 
+    <div id="global-navigation">
+    </div>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #chart {
+            display: flex;
+            justify-content: center;
+        }
+        h2 {
+            text-align: center;
+            color: #4e79a7;
+        }
+        .tooltip {
+          position: absolute;
+          background-color: white;
+          border: 1px solid #ccc;
+          padding: 7px;
+          border-radius: 5px;
+          box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+          font-size: 13px;
+        }
+        *{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+    </style>
+</head>
+<body>
+    <div id="chart"></div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const margin = { top: 50, right: 10, bottom: 50, left: 80 },
+              width = 1000 - margin.left - margin.right,
+              height = 600 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart")
+            .append("svg")
+            .attr("width", width + margin.left + margin.right + 500)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip");
+
+
+        d3.csv("data_ggsheet - data.csv").then(rawData => {
+            rawData.forEach(d => {
+                d["Thành tiền"] = +d["Thành tiền"];
+            });
+
+            const spendingByCustomer = d3.rollups(
+                rawData,
+                v => d3.sum(v, d => d["Thành tiền"]),
+                d => d["Mã khách hàng"]
+            );
+
+            const formatNumber = d3.format(",");
+            const binSize = 50000;
+
+            const binsMap = new Map();
+
+            spendingByCustomer.forEach(([customerId, totalSpend]) => {
+                const binIndex = Math.floor(totalSpend / binSize);
+                const lowerBound = binIndex * 50000;
+                const upperBound = lowerBound + 50000;
+                const binLabel = `${upperBound / 1000}K`;
+
+                const lowerFormatted = formatNumber(lowerBound);
+                const upperFormatted = formatNumber(upperBound);
+                const tooltipLabel = `${lowerFormatted} đến ${upperFormatted}`;
+
+                if (!binsMap.has(binLabel)) {
+                    binsMap.set(binLabel, { count: 0, tooltip: tooltipLabel, lower: lowerBound, upper: upperBound });
+                }
+
+                const binData = binsMap.get(binLabel);
+                binData.count += 1;
+            });
+
+            const data = Array.from(binsMap, ([label, { count, tooltip, lower, upper }]) => ({
+                label,
+                count,
+                tooltip,
+                lower,
+                upper
+            })).sort((a, b) => a.lower - b.lower);
+
+            console.log("Phân phối mức chi trả:", data);
+
+            const x = d3.scaleBand()
+                .domain(data.map(d => d.label))
+                .range([0, width])
+                .padding(0.1);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.count)])
+                .nice()
+                .range([height, 0]);
+
+            svg.append("text")
+            .attr("x", width / 2)  
+            .attr("y", -10)  
+            .attr("text-anchor", "middle")  
+            .style("font-size", "20px")  
+            .style("fill", "#4e79a7")  
+            .style("font-weight", "bold")  
+            .text("Phân phối mức chi trả của khách hàng");
+
+            svg.append("g")
+            .attr("class", "grid")
+            .call(d3.axisLeft(y)
+                    .tickSize(-width) 
+                    .tickFormat(""))   
+            .selectAll("line")
+            .attr("stroke", "#ccc")    
+            .attr("stroke-opacity", 0.8); 
+
+            svg.selectAll(".domain").remove();
+
+            svg.append("g")
+            .attr("transform", `translate(0, ${height})`)
+            .call(d3.axisBottom(x)
+                .tickFormat((d, i) => {
+                    return (i % 2 === 0) ? d : "";
+                })
+            )
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-0.8em")
+            .attr("dy", "-0.15em")
+            .attr("transform", "rotate(-90)")
+            .style("font-size", "12px");
+
+
+            svg.append("g")
+                .call(d3.axisLeft(y))
+                .selectAll("text")
+                .style("font-size", "12px");
+
+            svg.selectAll(".bar")
+                .data(data)
+                .join("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.label))
+                .attr("y", d => y(d.count))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.count))
+                .attr("fill", "#4e79a7")
+                .on("mouseover", (event, d) => {
+                    tooltip.transition().duration(200).style("opacity", 1);
+                    const lowerFormatted = d.lower.toLocaleString('vi-VN');
+                    const upperFormatted = d.upper.toLocaleString('vi-VN');
+                    tooltip.html(`
+                        <strong>Đã chỉ tiêu Từ ${lowerFormatted} đến ${upperFormatted}</strong><br/>
+                        Số lượng KH: ${d.count.toLocaleString('vi-VN')}
+                    `)
+                    .style("left", (event.pageX + 10) + "px")
+                    .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", () => {
+                    tooltip.transition().duration(500).style("opacity", 0);
+                });
+
+            const explanationGroup = svg.append("g")
+                                        .attr("transform", "translate(910,0)");
+                    
+            explanationGroup.append("rect")
+                            .attr("width", 400)
+                            .attr("height", 280)
+                            .attr("fill", "white")
+                            .attr("opacity", 0.7)
+                            .attr("stroke", "#ccc")
+                            .attr("stroke-width", 1)
+                            .attr("rx", 10); 
+
+            explanationGroup.append("foreignObject")
+                            .attr("x", 10)
+                            .attr("y", 10)
+                            .attr("width", 380)
+                            .attr("height", 250)
+                            .append("xhtml:div")
+                            .style("font-size", "13px")
+                            .style("color", "#333")
+                            .style("text-align", "justify")
+                            .style("line-height", "1.3")
+                            .html(`
+                                <p>- <strong>Khoảng "Từ 100.000 đến 150.000 VND"</strong> có số lượng khách hàng cao nhất với <strong>1.528 khách hàng</strong>. Đây là mức chi trả phổ biến nhất, cho thấy phần lớn khách hàng có xu hướng chi tiêu ở mức trung bình thấp.</p>
+                                <p>- Một số khoảng chi trả cao như khoảng từ 3.500.000 VND trở lên <strong>chỉ có 1 khách hàng</strong> mỗi khoảng. Điều này cho thấy rất ít khách hàng chi tiêu ở phân khúc giá cao.</p>
+                                <p>- <strong>Phân bố lệch phải:</strong> điều này cho thấy phần lớn khách hàng chỉ tập trung chi trả ở mức thấp (khoảng dưới 500.000 VND). </p>
+                                <p>➜ Nhìn vào xu hướng phân bố dễ nhận thấy phân khúc khách hàng của doanh nghiệp ở mức giá <strong>từ thấp đến trung bình</strong> (dưới 500.000 VND), <strong>gần 60%</strong> số khách hàng tập trung ở phân khúc này. Mức chi trả phổ biến nhất thường nằm ở mức 100.000 đến 200.000 VND.</p>
+                            `);
+
+        }).catch(error => {
+            console.error("Lỗi load dữ liệu:", error);
+        });
+    </script>
+    <script src="navigation.js"></script>
+</body>
+</html>
